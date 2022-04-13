@@ -1,113 +1,152 @@
-#include <stdlib.h>
-#include <GL/glut.h>
 #include <stdio.h>
+#include <GL/glut.h>
 
-GLfloat vertices[ ]={  -1.0,-1.0,-1.0,
-						1.0,-1.0,-1.0,
-						1.0, 1.0,-1.0,
-					   -1.0, 1.0,-1.0,
-                       -1.0,-1.0, 1.0,
-                        1.0,-1.0, 1.0,
-                        1.0, 1.0, 1.0,
-                       -1.0, 1.0, 1.0 };
+double xmin = 50, ymin = 50, xmax = 100, ymax = 100;            //window coordinates
+double xvmin = 200, yvmin = 200, xvmax = 300, yvmax = 300;  //viewport coordinates
 
-GLfloat normals[ ] ={  -1.0,-1.0,-1.0,
-						1.0,-1.0,-1.0,
-						1.0, 1.0,-1.0,
-					   -1.0, 1.0,-1.0,
-					   -1.0,-1.0, 1.0,
-						1.0,-1.0, 1.0,
-						1.0, 1.0, 1.0,
-					   -1.0, 1.0, 1.0 };
+const int LEFT = 1;                 // code words for LEFT, RIGHT, BOTTOM &TOP.
+const int RIGHT = 2;
+const int BOTTOM = 4;
+const int TOP = 8;
 
-GLfloat colors[ ]={ 0.0, 0.0, 0.0,
-					1.0, 0.0, 0.0,
-					1.0, 1.0, 0.0,
-					0.0, 1.0, 0.0,
-					0.0, 0.0, 1.0,
-					1.0, 0.0, 1.0,
-					1.0, 1.0, 1.0,
-					0.0, 1.0, 1.0};
-
-GLubyte cubeIndices[]={ 0,3,2,1,
-						2,3,7,6,
-						0,4,7,3,
-						1,2,6,5,
-						4,5,6,7,
-						0,1,5,4};
-
-static GLfloat theta[] = {0.0,0.0,0.0};
-static GLint axis = 2;
-static GLdouble viewer[] = {0.0,0.0,5.0};
-
-void display(void)
+int ComputeOutCode (double x, double y)
 {
-	glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
-	glLoadIdentity();
-	gluLookAt(viewer[0],viewer[1],viewer[2],0.0,0.0,0.0,0.0,1.0,0.0);
-	glRotatef(theta[0],1.0,0.0,0.0);
-	glRotatef(theta[1],0.0,1.0,0.0);
-	glRotatef(theta[2],0.0,0.0,1.0);
-	glDrawElements(GL_QUADS,24,GL_UNSIGNED_BYTE,cubeIndices);
-	glFlush();
-	glutSwapBuffers();
+    int code = 0;
+    if (y > ymax)                    //above the clip window
+        code |= TOP;
+    else if (y < ymin)              //below the clip window
+        code |= BOTTOM;
+    if (x > xmax)                   //to the right of clip window
+        code |= RIGHT;
+    else if (x < xmin)           //to the left of clip window
+        code |= LEFT;
+    return code;
 }
 
-void mouse(int btn, int state, int x, int y)
+void CohenSutherland(double x0, double y0,double x1, double y1)
 {
-	if(btn==GLUT_LEFT_BUTTON && state==GLUT_DOWN)
-		axis=0;
-	if(btn==GLUT_RIGHT_BUTTON && state==GLUT_DOWN)
-		axis=1;
-	if(btn==GLUT_MIDDLE_BUTTON && state==GLUT_DOWN)
-		axis=2;
-	theta[axis]+=2.0;
+    int outcode0, outcode1, outcodeOut;
+    bool accept = false, done = false;
+    outcode0 = ComputeOutCode (x0, y0);     //calculate the region of 1st point
+    outcode1 = ComputeOutCode (x1, y1);      //calculate the region of 2nd point
 
-	if(theta[axis]>360.0)
-		theta[axis]-=360.0;
-	glutPostRedisplay();
+    do
+    {
+        if (!(outcode0 | outcode1))
+        {
+            accept = true;
+            done = true;
+        }
+        else if (outcode0 & outcode1)
+            done = true;
+        else
+        {
+            double x, y;
+            double m = (y1 - y0)/(x1 - x0);
+            outcodeOut = outcode0? outcode0: outcode1;
+
+            if (outcodeOut & TOP)
+            {
+                x = x0 + (1/m) * (ymax - y0);
+                y = ymax;
+            }
+            else if (outcodeOut & BOTTOM)
+            {
+                x = x0 + (1/m) * (ymin - y0);
+                y = ymin;
+            }
+            else if (outcodeOut & RIGHT)
+            {
+                y = y0 +  m * (xmax - x0);
+                x = xmax;
+            }
+            else
+            {
+                y = y0 + m * (xmin - x0);
+                x = xmin;
+            }
+            /* Intersection calculations over */
+
+            if (outcodeOut == outcode0)
+            {
+                x0 = x;
+                y0 = y;
+                outcode0 = ComputeOutCode (x0, y0);
+            }
+            else
+            {
+                x1 = x;
+                y1 = y;
+                outcode1 = ComputeOutCode (x1, y1);
+            }
+        }
+    }
+    while (!done);
+
+    if (accept)
+    {
+        double sx = (xvmax - xvmin) / (xmax - xmin);
+        double sy = (yvmax - yvmin) / (ymax - ymin);
+        double vx0 = xvmin + (x0 - xmin) * sx;
+        double vy0 = yvmin + (y0 - ymin) * sy;
+        double vx1 = xvmin + (x1 - xmin) * sx;
+        double vy1 = yvmin + (y1 - ymin) * sy;
+
+        glBegin(GL_LINE_LOOP);
+            glVertex2f(xvmin, yvmin);
+            glVertex2f(xvmax, yvmin);
+            glVertex2f(xvmax, yvmax);
+            glVertex2f(xvmin, yvmax);
+        glEnd();
+
+        glBegin(GL_LINES);
+            glVertex2d (vx0, vy0);
+            glVertex2d (vx1, vy1);
+        glEnd();
+    }
 }
 
-void keys(unsigned char key, int x, int y)
+void display()
 {
-	if(key=='x') viewer[0]-=1.0;
-	if(key=='X') viewer[0]+=1.0;
-	if(key=='y') viewer[1]-=1.0;
-	if(key=='Y') viewer[1]+=1.0;
-	if(key=='z') viewer[2]-=1.0;
-	if(key=='Z') viewer[2]+=1.0;
-	glutPostRedisplay();
+    double x0 = 60, y0 = 20, x1 = 80, y1 = 120;
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    glColor3f(1, 1, 1);//white
+
+    glBegin(GL_LINES);
+        glVertex2d (x0, y0);
+        glVertex2d (x1, y1);
+    glEnd();
+
+   glBegin(GL_LINE_LOOP);
+        glVertex2f(xmin, ymin);
+        glVertex2f(xmax, ymin);
+        glVertex2f(xmax, ymax);
+        glVertex2f(xmin, ymax);
+    glEnd();
+
+    CohenSutherland(x0, y0, x1, y1);
+
+    glFlush();
 }
 
-void myReshape(int w, int h)
+void myinit()
 {
-	glViewport(0,0,w,h);
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-	if(w<=h)
-		glFrustum(-2.0,2.0,-2.0*(GLfloat)h/(GLfloat)w,2.0*(GLfloat)h/(GLfloat)w,2.0,20.0);
-	else
-		glFrustum(-2.0,2.0,-2.0*(GLfloat)w/(GLfloat)h,2.0*(GLfloat)w/(GLfloat)h,2.0,20.0);
-	glMatrixMode(GL_MODELVIEW);
+    glClearColor(0, 0, 0, 1);//black
+    gluOrtho2D(0, 500, 0, 500);
 }
 
 int main(int argc, char **argv)
 {
-	glutInit(&argc,argv);
-	glutInitDisplayMode(GLUT_DOUBLE|GLUT_RGB|GLUT_DEPTH);
-	glutInitWindowSize(500,500);
-	glutCreateWindow("color cube");
-	glutReshapeFunc(myReshape);
-	glutDisplayFunc(display);
-	glutKeyboardFunc(keys);
-	glutMouseFunc(mouse);
-	glEnable(GL_DEPTH_TEST);
-	glEnableClientState(GL_COLOR_ARRAY);
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glEnableClientState(GL_NORMAL_ARRAY);
-	glVertexPointer(3,GL_FLOAT,0,vertices);
-	glColorPointer(3,GL_FLOAT,0,colors);
-	glNormalPointer(GL_FLOAT,0,normals);
-	glColor3f(1.0,1.0,1.0);
-	glutMainLoop();
+    glutInit(&argc,argv);
+    glutInitDisplayMode(GLUT_SINGLE|GLUT_RGB);
+    glutInitWindowSize(500, 500);
+    glutInitWindowPosition(0, 0);
+    glutCreateWindow("Cohen Sutherland Line Clipping Algorithm");
+
+    myinit();
+
+    glutDisplayFunc(display);
+
+    glutMainLoop();
 }
